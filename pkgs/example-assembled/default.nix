@@ -1,6 +1,7 @@
 # Exercises assemble mode: the src is an "upstream repo" in its own
 # layout, skills are mapped explicitly and the manifest is generated —
-# the exact call shape `flox-agent import` emits (docs/import-contract.md).
+# the exact call shape `flox-agent import` emits
+# (docs/reference/import-contract.md).
 { buildAgentPlugin }:
 
 buildAgentPlugin {

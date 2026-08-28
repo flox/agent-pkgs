@@ -8,7 +8,7 @@
 # Skill selection, in precedence order:
 #
 # 1. Explicit `skills` argument (skill name -> path inside src) — what
-#    `flox-agent import` generates; see docs/import-contract.md.
+#    `flox-agent import` generates; see docs/reference/import-contract.md.
 # 2. A `skills-lock.json` at the src root (the project lock written by
 #    the upstream skills CLI): entries are read at build time and each
 #    skill is copied from its in-tree skillPath. Entries whose files
