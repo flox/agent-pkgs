@@ -10,20 +10,9 @@ builds with plain Nix — no Flox required.
 
 ## Use it
 
-With flakes:
-
 ```sh
 nix build github:flox/agent-pkgs#example-plugin
 ```
-
-Without flakes:
-
-```sh
-nix-build https://github.com/flox/agent-pkgs/archive/main.tar.gz \
-  -A packages.x86_64-linux.example-plugin
-```
-
-Both front doors share one nixpkgs pin (`flake.lock`).
 
 Every package produces the canonical Agent Plugins layout:
 

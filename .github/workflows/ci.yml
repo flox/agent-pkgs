@@ -30,6 +30,3 @@ jobs:
 
       - name: Flake check (builds every package)
         run: nix flake check -L
-
-      - name: Non-flake front door
-        run: nix-build -A packages.$(nix eval --raw --impure --expr builtins.currentSystem).example-plugin
