@@ -40,7 +40,46 @@
     in
     {
       packages = forAllSystems mkPackages;
-      checks = forAllSystems mkPackages;
+      checks = forAllSystems (pkgs:
+        mkPackages pkgs // {
+          # Assert the canonical layout and passthru for every package.
+          layout = pkgs.runCommand "check-layout"
+            {
+              plugins = map (p: "${p} ${p.passthru.agentPlugin.path}")
+                (builtins.attrValues (mkPackages pkgs));
+            } ''
+            set -- $plugins
+            while [ $# -ge 2 ]; do
+              root="$1"; rel="$2"; shift 2
+              tree="$root/$rel"
+              [ -f "$tree/plugin.json" ] || { echo "missing plugin.json in $tree"; exit 1; }
+              [ -d "$tree/skills" ] || { echo "missing skills/ in $tree"; exit 1; }
+              found=0
+              for s in "$tree/skills"/*/; do
+                [ -f "$s/SKILL.md" ] || { echo "missing SKILL.md in $s"; exit 1; }
+                found=1
+              done
+              [ "$found" = 1 ] || { echo "no skills in $tree"; exit 1; }
+            done
+            touch $out
+          '';
+
+          # The substitution pass (AI-640) attaches via overrideAttrs
+          # on the postAssemble hook — prove that extension point works.
+          override-hook =
+            let
+              overridden = (mkPackages pkgs).example-assembled.overrideAttrs (prev: {
+                postAssemble = (prev.postAssemble or "") + ''
+                  echo hooked > "$dest/HOOKED"
+                '';
+              });
+            in
+            pkgs.runCommand "check-override-hook" { } ''
+              [ -f ${overridden}/share/agent-plugins/example-assembled/HOOKED ] \
+                || { echo "postAssemble hook did not run"; exit 1; }
+              touch $out
+            '';
+        });
       lib = forAllSystems mkLib;
     };
 }

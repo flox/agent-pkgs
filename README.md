@@ -42,6 +42,12 @@ as an internal plugin marketplace: keep `lib/`, replace `pkgs/` with
 your own set, and CI (plain GitHub Actions) builds every package on
 every PR.
 
+## Documentation
+
+Start at [docs/index.md](docs/index.md): architecture, the
+[import→builder contract](docs/reference/import-contract.md), and
+decision records.
+
 ## License
 
 MIT. Individual packaged plugins carry their upstream licenses,
