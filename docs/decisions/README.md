@@ -14,3 +14,4 @@ Format and process live in [template.md](template.md).
 | [0003](0003-upstream-manifest-wins.md) | Upstream plugin.json wins; manifest argument fills the gap |
 | [0004](0004-skill-selection-precedence.md) | Skill selection: explicit args, then lock file, then passthrough |
 | [0005](0005-canonical-output-layout.md) | Canonical output under share/agent-plugins/ |
+| [0006](0006-runtime-substitution.md) | Runtime substitution: plugin-local bin/, deterministic scope |
