@@ -223,6 +223,68 @@
                 && { echo "unpinned harness must not touch PATH"; exit 1; }
               touch $out
             '';
+
+          # AI-560: invalid stacks must fail at evaluation, not at run
+          # time. tryEval catches throw; forcing drvPath forces the
+          # arguments that contain the throws.
+          stack-assertions =
+            let
+              plugin = (mkPackages pkgs).example-plugin;
+              failsToEval = args:
+                !(builtins.tryEval
+                  ((mkLib pkgs).mkAgentStack args).drvPath).success;
+              cases = [
+                {
+                  label = "missing harness";
+                  bad = failsToEval { name = "s"; plugins = [ plugin ]; };
+                }
+                {
+                  label = "unknown adapter";
+                  bad = failsToEval { name = "s"; harness = "emacs"; };
+                }
+                {
+                  label = "non-plugin package";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = "claude";
+                    plugins = [ pkgs.hello ];
+                  };
+                }
+                {
+                  label = "duplicate plugin names";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = "claude";
+                    plugins = [ plugin plugin ];
+                  };
+                }
+                {
+                  label = "package harness without mainProgram";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = pkgs.stdenvNoCC.mkDerivation {
+                      name = "no-mainProgram";
+                      dontUnpack = true;
+                      dontPatchShebangs = true;
+                      installPhase = "mkdir -p $out/bin; touch $out/bin/test";
+                      meta = { };
+                    };
+                  };
+                }
+              ];
+              report = c:
+                if c.bad
+                then ''echo "ok: ${c.label} rejected"''
+                else ''
+                  echo "FAIL: ${c.label} evaluated but should not have"
+                  exit 1
+                '';
+            in
+            pkgs.runCommand "check-stack-assertions" { }
+              (pkgs.lib.concatMapStringsSep "\n" report cases + ''
+
+                touch $out
+              '');
         });
       lib = forAllSystems mkLib;
     };
