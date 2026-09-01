@@ -25,9 +25,7 @@
 
       mkLib = pkgs: {
         buildAgentPlugin = pkgs.callPackage ./lib/build-agent-plugin.nix { };
-        mkAgentStack = pkgs.callPackage ./lib/mk-agent-stack.nix {
-          buildAgentPlugin = (mkLib pkgs).buildAgentPlugin;
-        };
+        mkAgentStack = pkgs.callPackage ./lib/mk-agent-stack.nix { };
         runtimeMappings = import ./mappings/runtimes.nix;
       };
 
@@ -119,6 +117,7 @@
               };
               stack = lib'.mkAgentStack {
                 name = "two-pythons";
+                harness = "claude";
                 plugins = [ (mkPackages pkgs).example-runtimes pinned ];
               };
             in
@@ -165,6 +164,31 @@
                 "mappings/runtimes.nix"
               ];
             };
+
+          # A stack composed from two real plugins.
+          stack-layout =
+            let
+              demoStack = (mkLib pkgs).mkAgentStack {
+                name = "demo-stack";
+                harness = "claude";
+                plugins = [
+                  (mkPackages pkgs).example-plugin
+                  (mkPackages pkgs).example-runtimes
+                ];
+              };
+            in
+            pkgs.runCommand "check-stack-layout" { } ''
+              for p in example-plugin example-runtimes; do
+                [ -f ${demoStack}/share/agent-plugins/$p/plugin.json ] \
+                  || { echo "missing plugin.json for $p"; exit 1; }
+                [ -d ${demoStack}/share/agent-plugins/$p/skills ] \
+                  || { echo "missing skills/ for $p"; exit 1; }
+              done
+              # AI-640 put interpreters here; composition must not lose them.
+              [ -L ${demoStack}/share/agent-plugins/example-runtimes/bin/python3 ] \
+                || { echo "runtime bin/ lost in composition"; exit 1; }
+              touch $out
+            '';
         });
       lib = forAllSystems mkLib;
     };
