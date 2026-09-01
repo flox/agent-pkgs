@@ -58,6 +58,26 @@ let
       can launch. Known agents: ${lib.concatStringsSep ", " knownAdapters}
     '';
 
+  # Until AI-635 publishes the -bin package, the launcher resolves
+  # flox-agent at run time. When it lands, agent-pkgs binds the store
+  # path here and the override becomes a development escape hatch.
+  floxAgentBin = ''"''${FLOX_AGENT_BIN:-flox-agent}"'';
+
+  # builtins.placeholder gives this output's final store path, so the
+  # script can name its own share directory without any substitution.
+  launcherText = ''
+    #!${runtimeShell}
+    set -eu
+  ''
+  + lib.optionalString (harnessInfo.pinDir != null) ''
+    export PATH="${harnessInfo.pinDir}:$PATH"
+  ''
+  + ''
+    exec ${floxAgentBin} \
+      --dir "${builtins.placeholder "out"}/share" \
+      launch ${adapter} -- "$@"
+  '';
+
   pluginOf = p:
     p.passthru.agentPlugin or (throw ''
       mkAgentStack: '${p.pname or p.name or "<unnamed>"}' is not an agent
@@ -93,6 +113,11 @@ stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
 
+  # Written to a file by the builder, so no shell quoting of the
+  # script body is involved.
+  inherit launcherText;
+  passAsFile = [ "launcherText" ];
+
   # A stack composes plugins; it never rewrites their content.
   # buildAgentPlugin already resolved every interpreter to an absolute
   # store path and fails the build if any executable still carries a
@@ -106,6 +131,7 @@ stdenvNoCC.mkDerivation {
 
     mkdir -p "$out/share/agent-plugins" "$out/bin" "$audit/bin"
     ${lib.concatMapStringsSep "\n" copyPlugin checkedPlugins}
+    install -Dm755 "$launcherTextPath" "$out/bin/${name}"
 
     runHook postInstall
   '';

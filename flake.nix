@@ -189,6 +189,40 @@
                 || { echo "runtime bin/ lost in composition"; exit 1; }
               touch $out
             '';
+
+          # The launcher names the adapter, pins a package harness, and
+          # keeps the FLOX_AGENT_BIN override until AI-635 lands.
+          stack-launcher =
+            let
+              fakeClaude = pkgs.writeShellScriptBin "claude" "exec true";
+              pinnedStack = (mkLib pkgs).mkAgentStack {
+                name = "pinned-stack";
+                harness = fakeClaude;
+                plugins = [ (mkPackages pkgs).example-plugin ];
+              };
+              pathStack = (mkLib pkgs).mkAgentStack {
+                name = "path-stack";
+                harness = "claude";
+                plugins = [ (mkPackages pkgs).example-plugin ];
+              };
+            in
+            pkgs.runCommand "check-stack-launcher" { } ''
+              pinned=${pinnedStack}/bin/pinned-stack
+              [ -x "$pinned" ] || { echo "launcher not executable"; exit 1; }
+              grep -q 'launch claude' "$pinned" \
+                || { echo "launcher does not name the adapter"; exit 1; }
+              grep -q '${fakeClaude}/bin' "$pinned" \
+                || { echo "pinned harness not on PATH"; exit 1; }
+              grep -q 'FLOX_AGENT_BIN' "$pinned" \
+                || { echo "launcher lost the FLOX_AGENT_BIN override"; exit 1; }
+              grep -q "${pinnedStack}/share" "$pinned" \
+                || { echo "launcher does not point at its own share dir"; exit 1; }
+
+              plain=${pathStack}/bin/path-stack
+              grep -q 'export PATH' "$plain" \
+                && { echo "unpinned harness must not touch PATH"; exit 1; }
+              touch $out
+            '';
         });
       lib = forAllSystems mkLib;
     };
