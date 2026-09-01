@@ -93,6 +93,14 @@ stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
 
+  # A stack composes plugins; it never rewrites their content.
+  # buildAgentPlugin already resolved every interpreter to an absolute
+  # store path and fails the build if any executable still carries a
+  # /usr/bin/env shebang, so patching here would be a no-op at best and
+  # a corruption of pinned paths at worst. Plugin files are also copied
+  # read-only out of the store, which patchShebangs could not write to.
+  dontPatchShebangs = true;
+
   installPhase = ''
     runHook preInstall
 
