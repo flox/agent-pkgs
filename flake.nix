@@ -25,7 +25,9 @@
 
       mkLib = pkgs: {
         buildAgentPlugin = pkgs.callPackage ./lib/build-agent-plugin.nix { };
-        mkAgentStack = pkgs.callPackage ./lib/mk-agent-stack.nix { };
+        mkAgentStack = pkgs.callPackage ./lib/mk-agent-stack.nix {
+          defaultAuditTools = import ./mappings/audit-tools.nix { inherit pkgs; };
+        };
         runtimeMappings = import ./mappings/runtimes.nix;
       };
 
@@ -221,6 +223,41 @@
               plain=${pathStack}/bin/path-stack
               grep -q 'export PATH' "$plain" \
                 && { echo "unpinned harness must not touch PATH"; exit 1; }
+              touch $out
+            '';
+
+          # The audit output ships a runnable auditor over every skill.
+          stack-audit =
+            let
+              gatedStack = (mkLib pkgs).mkAgentStack {
+                name = "gated-stack";
+                harness = "claude";
+                plugins = [ (mkPackages pkgs).example-plugin ];
+                audit = {
+                  tools = [ pkgs.jq ];
+                  threshold = 70;
+                };
+              };
+              plainStack = (mkLib pkgs).mkAgentStack {
+                name = "plain-stack";
+                harness = "claude";
+                plugins = [ (mkPackages pkgs).example-plugin ];
+              };
+            in
+            pkgs.runCommand "check-stack-audit" { } ''
+              gated=${gatedStack.audit}/bin/gated-stack-audit
+              [ -x "$gated" ] || { echo "audit script missing"; exit 1; }
+              grep -q -- '--threshold 70' "$gated" \
+                || { echo "threshold not passed to audit"; exit 1; }
+              grep -q '${pkgs.jq}/bin' "$gated" \
+                || { echo "audit tools not on PATH"; exit 1; }
+              grep -q "${gatedStack}/share/agent-plugins" "$gated" \
+                || { echo "auditor does not read its own stack"; exit 1; }
+
+              plain=${plainStack.audit}/bin/plain-stack-audit
+              [ -x "$plain" ] || { echo "default audit script missing"; exit 1; }
+              grep -q -- '--threshold' "$plain" \
+                && { echo "no threshold configured, none expected"; exit 1; }
               touch $out
             '';
 

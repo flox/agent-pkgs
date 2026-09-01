@@ -10,6 +10,8 @@
 { lib
 , stdenvNoCC
 , runtimeShell
+  # From mappings/audit-tools.nix; see that file for why it may be empty.
+, defaultAuditTools ? [ ]
 }:
 
 { name
@@ -103,6 +105,31 @@ let
     ''
       cp -R ${p}/${ap.path} "$out/share/agent-plugins/${ap.name}"
     '';
+
+  auditTools = audit.tools or defaultAuditTools;
+  auditThreshold = audit.threshold or null;
+  auditToolPath = lib.makeBinPath auditTools;
+
+  auditText = ''
+    #!${runtimeShell}
+    set -eu
+  ''
+  + lib.optionalString (auditTools != [ ]) ''
+    export PATH="${auditToolPath}:$PATH"
+  ''
+  + ''
+    status=0
+    stack_dir="${builtins.placeholder "out"}/share/agent-plugins"
+    for skill in "$stack_dir"/*/skills/*/; do
+      [ -f "$skill/SKILL.md" ] || continue
+      echo "==> $skill"
+      ${floxAgentBin} audit "$skill" --kind skill${
+        lib.optionalString (auditThreshold != null)
+          " --threshold ${toString auditThreshold}"
+      } || status=1
+    done
+    exit $status
+  '';
 in
 stdenvNoCC.mkDerivation {
   pname = "agent-stack-${name}";
@@ -115,8 +142,8 @@ stdenvNoCC.mkDerivation {
 
   # Written to a file by the builder, so no shell quoting of the
   # script body is involved.
-  inherit launcherText;
-  passAsFile = [ "launcherText" ];
+  inherit launcherText auditText;
+  passAsFile = [ "launcherText" "auditText" ];
 
   # A stack composes plugins; it never rewrites their content.
   # buildAgentPlugin already resolved every interpreter to an absolute
@@ -132,6 +159,7 @@ stdenvNoCC.mkDerivation {
     mkdir -p "$out/share/agent-plugins" "$out/bin" "$audit/bin"
     ${lib.concatMapStringsSep "\n" copyPlugin checkedPlugins}
     install -Dm755 "$launcherTextPath" "$out/bin/${name}"
+    install -Dm755 "$auditTextPath" "$audit/bin/${name}-audit"
 
     runHook postInstall
   '';
