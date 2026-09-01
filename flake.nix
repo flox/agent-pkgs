@@ -79,6 +79,92 @@
                 || { echo "postAssemble hook did not run"; exit 1; }
               touch $out
             '';
+
+          # AI-640 acceptance: interpreters land in the closure, the
+          # shebangs and mcp.json point at the plugin-local bin/.
+          runtimes-closure =
+            let plugin = (mkPackages pkgs).example-runtimes;
+            in pkgs.runCommand "check-runtimes-closure" { } ''
+              tree=${plugin}/share/agent-plugins/example-runtimes
+              for tok in python3 node; do
+                [ -L "$tree/bin/$tok" ] || { echo "bin/$tok missing"; exit 1; }
+                target=$(readlink "$tree/bin/$tok")
+                [ -x "$target" ] || { echo "bin/$tok target $target not in closure"; exit 1; }
+              done
+              py="$tree/skills/greet/scripts/hello.py"
+              head -1 "$py" | grep -q "^#!$tree/bin/python3$" \
+                || { echo "shebang not rewritten: $(head -1 "$py")"; exit 1; }
+              [ -x "$py" ] || { echo "hello.py not executable"; exit 1; }
+              "$py" | grep -q "hello from python" || { echo "hello.py does not run"; exit 1; }
+              cmd=$(${pkgs.jq}/bin/jq -r '.mcpServers.hello.command' "$tree/mcp.json")
+              [ "$cmd" = "$tree/bin/python3" ] \
+                || { echo "mcp command not rewritten: $cmd"; exit 1; }
+              touch $out
+            '';
+
+          # AI-640 acceptance: two plugins with conflicting interpreter
+          # versions coexist in one stack.
+          runtimes-two-pythons =
+            let
+              lib' = mkLib pkgs;
+              pinned = lib'.buildAgentPlugin {
+                name = "example-runtimes-pinned";
+                src = ./pkgs/example-runtimes/src;
+                manifest = {
+                  "$schema" = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+                  name = "example-runtimes-pinned";
+                };
+                skills.greet = "skills/greet";
+                runtimes.python3 = pkgs.python312;
+              };
+              stack = lib'.mkAgentStack {
+                name = "two-pythons";
+                plugins = [ (mkPackages pkgs).example-runtimes pinned ];
+              };
+            in
+            pkgs.runCommand "check-two-pythons" { } ''
+              a=$(readlink ${stack}/share/agent-plugins/example-runtimes/bin/python3)
+              b=$(readlink ${stack}/share/agent-plugins/example-runtimes-pinned/bin/python3)
+              [ "$a" != "$b" ] || { echo "expected two different pythons, got $a twice"; exit 1; }
+              case "$b" in *3.12*) ;; *) echo "pinned python is not 3.12: $b"; exit 1 ;; esac
+              "$a" -c 'print(1)' >/dev/null && "$b" -c 'print(1)' >/dev/null \
+                || { echo "one of the pythons does not run"; exit 1; }
+              touch $out
+            '';
+
+          # AI-640: an unmapped runtime fails the build with a message
+          # pointing at the table, and the guard catches executables
+          # whose /usr/bin/env shebang survived.
+          runtimes-failures =
+            let
+              lib' = mkLib pkgs;
+              unmappedSrc = pkgs.writeTextDir "skills/x/SKILL.md" ''
+                ---
+                name: x
+                description: Uses an unmapped runtime.
+                ---
+              '';
+              unmapped = lib'.buildAgentPlugin {
+                name = "unmapped";
+                src = pkgs.runCommand "unmapped-src" { } ''
+                  mkdir -p $out/skills/x/scripts
+                  cp ${unmappedSrc}/skills/x/SKILL.md $out/skills/x/SKILL.md
+                  printf '#!/usr/bin/env lua\nprint(1)\n' > $out/skills/x/scripts/r.lua
+                '';
+                manifest = {
+                  "$schema" = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+                  name = "unmapped";
+                };
+                skills.x = "skills/x";
+              };
+            in
+            pkgs.testers.testBuildFailure' {
+              drv = unmapped;
+              expectedBuilderLogEntries = [
+                "runtime 'lua'"
+                "mappings/runtimes.nix"
+              ];
+            };
         });
       lib = forAllSystems mkLib;
     };

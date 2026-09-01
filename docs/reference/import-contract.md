@@ -92,8 +92,14 @@ When a `floxAgent` package is passed, the install check phase runs
 validates trees at generation time with the same command, so both
 ends of the pipeline enforce the same spec (vendored in flox-agent).
 
-## Substitution hook
+## Runtime substitution
 
-`postAssemble` runs on the fully assembled tree before install and
-checks — the runtime store-path substitution pass (AI-640) attaches
-there via `overrideAttrs`.
+The builder itself rewrites shebangs and bare `mcp.json` commands to
+a plugin-local `bin/` of store-path symlinks, resolved through
+`mappings/runtimes.nix` and the per-plugin `runtimes` argument. See
+[build-agent-plugin.md](build-agent-plugin.md) and ADR 0006. The
+`postAssemble` hook still exists for extensions and runs on the fully
+substituted tree.
+
+Import may later emit `runtimes` hints into the generated call; that
+is not part of the contract yet.

@@ -27,5 +27,9 @@ buildAgentPlugin {
     };
   };
 
+  # echo-server is a stand-in binary the consumer environment provides;
+  # it is not an interpreter the closure can carry.
+  allowPathCommands = [ "echo-server" ];
+
   meta.description = "Assemble-mode example Agent Plugin";
 }
