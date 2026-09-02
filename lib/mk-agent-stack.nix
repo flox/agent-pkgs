@@ -1,8 +1,8 @@
 # mkAgentStack — compose plugins and one harness into a runnable stack.
 #
 #   $out/share/agent-plugins/<plugin>/   the neutral spec layout
-#   $out/bin/<name>                      launcher (added in task 2)
-#   $audit/bin/<name>-audit              audit runner (added in task 4)
+#   $out/bin/<name>                      launcher
+#   $audit/bin/<name>-audit              audit runner
 #
 # A stack runs exactly one agent. Several agents means several stacks
 # installed into one environment. All harness adaptation happens at
@@ -108,11 +108,23 @@ let
   copyPlugin = p:
     let ap = pluginOf p; in
     ''
-      cp -R ${p}/${ap.path} "$out/share/agent-plugins/${ap.name}"
+      cp -R "${p}/${ap.path}" "$out/share/agent-plugins/${ap.name}"
     '';
 
-  auditTools = audit.tools or defaultAuditTools;
-  auditThreshold = audit.threshold or null;
+  knownAuditOptions = [ "threshold" "tools" ];
+  unknownAuditOptions =
+    lib.subtractLists knownAuditOptions (builtins.attrNames audit);
+  checkedAudit =
+    if unknownAuditOptions == [ ] then audit
+    else throw ''
+      mkAgentStack: unknown audit option${
+        lib.optionalString (builtins.length unknownAuditOptions > 1) "s"
+      }: ${lib.concatStringsSep ", " unknownAuditOptions}.
+      Known options: ${lib.concatStringsSep ", " knownAuditOptions}.
+    '';
+
+  auditTools = checkedAudit.tools or defaultAuditTools;
+  auditThreshold = checkedAudit.threshold or null;
   auditToolPath = lib.makeBinPath auditTools;
 
   auditText = ''
@@ -123,6 +135,10 @@ let
     export PATH="${auditToolPath}:$PATH"
   ''
   + ''
+    if ! command -v ${floxAgentBin} >/dev/null 2>&1; then
+      echo "flox-agent not found; set FLOX_AGENT_BIN or install it" >&2
+      exit 127
+    fi
     status=0
     stack_dir="${builtins.placeholder "out"}/share/agent-plugins"
     for skill in "$stack_dir"/*/skills/*/; do

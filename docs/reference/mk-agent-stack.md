@@ -10,8 +10,10 @@ mkAgentStack {
 }
 ```
 
-Building that produces `bin/my-stack`. Running it starts the agent
-with every skill in the stack wired in.
+Building that produces `bin/my-stack`. Running it starts the agent.
+Skills reach the agent once `flox-agent launch` reads the
+`share/agent-plugins` layout; until then a stack launches its harness
+without them.
 
 ## Arguments
 
@@ -32,6 +34,12 @@ A stack runs exactly one agent. Three ways to name it:
 | String | `harness = "claude";` | Resolved from the consumer's PATH at run time. |
 | Binary path (string) | `harness = "${claude-code}/bin/claude";` | Pinned; the launcher puts that directory first on PATH. |
 | Package | `harness = claude-code;` | Pinned, using `meta.mainProgram` for the agent name. |
+
+"Pinned" only guarantees a closure when the path is a Nix store
+path, as `${claude-code}/bin/claude` is. An arbitrary filesystem
+path, such as `harness = "/usr/local/bin/claude"`, is accepted the
+same way but is not reproducible: nothing ties the launcher to a
+particular closure at that location.
 
 The agent is identified by the binary's basename, matched against the
 agents `flox-agent launch` supports: `agent-deck`, `claude`, `codex`,
@@ -56,6 +64,13 @@ The stack carries no per-harness directories. Adapting plugins to
 whatever the agent expects happens at launch, in `flox-agent launch`,
 so a stack does not need rebuilding when that wiring changes.
 
+The `audit` output is not built by default. Ask for it explicitly:
+
+```sh
+nix build .#my-stack^audit
+./result-audit/bin/my-stack-audit
+```
+
 ## What fails to evaluate
 
 An invalid stack never builds:
@@ -67,6 +82,17 @@ An invalid stack never builds:
 - a harness package without `meta.mainProgram`
 - a `harness` that is a Nix path literal, a list, or a number rather than
   a name, a binary path written as a string, or a package
+
+## Passthru
+
+```nix
+passthru.agentStack = {
+  name;      # the stack's name
+  adapter;   # the agent flox-agent will launch
+  harness;   # the harness as given: a name, a binary path, or a package
+  plugins;   # the plugin names in the stack
+};
+```
 
 ## Stability
 

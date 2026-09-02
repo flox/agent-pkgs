@@ -318,6 +318,14 @@
                     harness = ./flake.nix;
                   };
                 }
+                {
+                  label = "unknown audit option";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = "claude";
+                    audit.threshhold = 70;
+                  };
+                }
               ];
               report = c:
                 if c.bad

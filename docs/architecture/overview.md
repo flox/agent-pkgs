@@ -40,11 +40,15 @@ adapts plugins to the agent just in time.
 ## Package discovery
 
 Every subdirectory of `pkgs/` with a `default.nix` becomes a flake
-package via `callPackage` — no central list. `flake.nix` also exposes
-`lib.buildAgentPlugin` and `lib.mkAgentStack` per system, and
+package. `mkPackages` builds them with `pkgs.newScope` over a
+self-referential scope, not plain `callPackage` — no central list,
+and a package in `pkgs/` may take another package in `pkgs/` as an
+argument, which is how a stack names its plugins. `flake.nix` also
+exposes `lib.buildAgentPlugin` and `lib.mkAgentStack` per system, and
 `checks` covering every package plus the `layout`, `override-hook`,
-`runtimes-closure`, `runtimes-two-pythons`, and `runtimes-failures`
-assertions.
+`runtimes-closure`, `runtimes-two-pythons`, `runtimes-failures`,
+`stack-layout`, `stack-launcher`, `stack-audit`, and
+`stack-assertions` assertions.
 
 ## CI
 

@@ -42,6 +42,11 @@ nix build github:agent-stacks/agent-pkgs#example-stack
 ./result/bin/example-stack
 ```
 
+That launches the harness, but skills aren't wired in yet: every
+adapter in `flox-agent` still reads the old `share/flox/<agent>/`
+layout, so the agent starts with none of the stack's skills until a
+separate launch rework lands.
+
 See [docs/reference/mk-agent-stack.md](docs/reference/mk-agent-stack.md).
 
 ## Fork it
