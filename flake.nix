@@ -32,11 +32,13 @@
       };
 
       mkPackages = pkgs:
-        let lib' = mkLib pkgs;
-        in nixpkgs.lib.genAttrs (pluginDirs pkgs) (name:
-          pkgs.callPackage (./pkgs + "/${name}") {
-            inherit (lib') buildAgentPlugin;
-          });
+        let
+          lib' = mkLib pkgs;
+          scope = { inherit (lib') buildAgentPlugin mkAgentStack; } // built;
+          built = nixpkgs.lib.genAttrs (pluginDirs pkgs) (name:
+            pkgs.newScope scope (./pkgs + "/${name}") { });
+        in
+        built;
     in
     {
       packages = forAllSystems mkPackages;
@@ -46,7 +48,8 @@
           layout = pkgs.runCommand "check-layout"
             {
               plugins = map (p: "${p} ${p.passthru.agentPlugin.path}")
-                (builtins.attrValues (mkPackages pkgs));
+                (builtins.filter (p: p.passthru ? agentPlugin)
+                  (builtins.attrValues (mkPackages pkgs)));
             } ''
             set -- $plugins
             while [ $# -ge 2 ]; do
