@@ -30,6 +30,13 @@ so the interpreters land in the closure
 validates the result with `flox-agent check-plugin` when the binary
 is available ([ADR 0002](../decisions/0002-optional-check-phase.md)).
 
+## Composition
+
+`mkAgentStack` composes plugins and one harness into a stack: the
+neutral plugin layout, a launcher named after the stack, and an audit
+output. It bakes no per-harness trees, because `flox-agent launch`
+adapts plugins to the agent just in time.
+
 ## Package discovery
 
 Every subdirectory of `pkgs/` with a `default.nix` becomes a flake

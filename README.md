@@ -35,6 +35,15 @@ result/share/agent-plugins/<name>/
 Add a package by dropping a directory into `pkgs/` — typically via
 `flox-agent import <repo> --out pkgs/<name>`.
 
+## Stacks
+
+```sh
+nix build github:agent-stacks/agent-pkgs#example-stack
+./result/bin/example-stack
+```
+
+See [docs/reference/mk-agent-stack.md](docs/reference/mk-agent-stack.md).
+
 ## Fork it
 
 An organization using Nix (with or without Flox) can fork this repo
