@@ -26,17 +26,19 @@
       mkLib = pkgs: {
         buildAgentPlugin = pkgs.callPackage ./lib/build-agent-plugin.nix { };
         mkAgentStack = pkgs.callPackage ./lib/mk-agent-stack.nix {
-          buildAgentPlugin = (mkLib pkgs).buildAgentPlugin;
+          defaultAuditTools = import ./mappings/audit-tools.nix { inherit pkgs; };
         };
         runtimeMappings = import ./mappings/runtimes.nix;
       };
 
       mkPackages = pkgs:
-        let lib' = mkLib pkgs;
-        in nixpkgs.lib.genAttrs (pluginDirs pkgs) (name:
-          pkgs.callPackage (./pkgs + "/${name}") {
-            inherit (lib') buildAgentPlugin;
-          });
+        let
+          lib' = mkLib pkgs;
+          scope = { inherit (lib') buildAgentPlugin mkAgentStack; } // built;
+          built = nixpkgs.lib.genAttrs (pluginDirs pkgs) (name:
+            pkgs.newScope scope (./pkgs + "/${name}") { });
+        in
+        built;
     in
     {
       packages = forAllSystems mkPackages;
@@ -46,7 +48,8 @@
           layout = pkgs.runCommand "check-layout"
             {
               plugins = map (p: "${p} ${p.passthru.agentPlugin.path}")
-                (builtins.attrValues (mkPackages pkgs));
+                (builtins.filter (p: p.passthru ? agentPlugin)
+                  (builtins.attrValues (mkPackages pkgs)));
             } ''
             set -- $plugins
             while [ $# -ge 2 ]; do
@@ -119,6 +122,7 @@
               };
               stack = lib'.mkAgentStack {
                 name = "two-pythons";
+                harness = "claude";
                 plugins = [ (mkPackages pkgs).example-runtimes pinned ];
               };
             in
@@ -165,6 +169,177 @@
                 "mappings/runtimes.nix"
               ];
             };
+
+          # A stack composed from two real plugins.
+          stack-layout =
+            let
+              demoStack = (mkLib pkgs).mkAgentStack {
+                name = "demo-stack";
+                harness = "claude";
+                plugins = [
+                  (mkPackages pkgs).example-plugin
+                  (mkPackages pkgs).example-runtimes
+                ];
+              };
+            in
+            pkgs.runCommand "check-stack-layout" { } ''
+              for p in example-plugin example-runtimes; do
+                [ -f ${demoStack}/share/agent-plugins/$p/plugin.json ] \
+                  || { echo "missing plugin.json for $p"; exit 1; }
+                [ -d ${demoStack}/share/agent-plugins/$p/skills ] \
+                  || { echo "missing skills/ for $p"; exit 1; }
+              done
+              # AI-640 put interpreters here; composition must not lose them.
+              [ -L ${demoStack}/share/agent-plugins/example-runtimes/bin/python3 ] \
+                || { echo "runtime bin/ lost in composition"; exit 1; }
+              touch $out
+            '';
+
+          # The launcher names the adapter, pins a package harness, and
+          # keeps the FLOX_AGENT_BIN override until AI-635 lands.
+          stack-launcher =
+            let
+              fakeClaude = pkgs.writeShellScriptBin "claude" "exec true";
+              pinnedStack = (mkLib pkgs).mkAgentStack {
+                name = "pinned-stack";
+                harness = fakeClaude;
+                plugins = [ (mkPackages pkgs).example-plugin ];
+              };
+              pathStack = (mkLib pkgs).mkAgentStack {
+                name = "path-stack";
+                harness = "claude";
+                plugins = [ (mkPackages pkgs).example-plugin ];
+              };
+            in
+            pkgs.runCommand "check-stack-launcher" { } ''
+              pinned=${pinnedStack}/bin/pinned-stack
+              [ -x "$pinned" ] || { echo "launcher not executable"; exit 1; }
+              grep -q 'launch claude' "$pinned" \
+                || { echo "launcher does not name the adapter"; exit 1; }
+              grep -q '${fakeClaude}/bin' "$pinned" \
+                || { echo "pinned harness not on PATH"; exit 1; }
+              grep -q 'FLOX_AGENT_BIN' "$pinned" \
+                || { echo "launcher lost the FLOX_AGENT_BIN override"; exit 1; }
+              grep -q "${pinnedStack}/share" "$pinned" \
+                || { echo "launcher does not point at its own share dir"; exit 1; }
+
+              plain=${pathStack}/bin/path-stack
+              grep -q 'export PATH' "$plain" \
+                && { echo "unpinned harness must not touch PATH"; exit 1; }
+              touch $out
+            '';
+
+          # The audit output ships a runnable auditor over every skill.
+          stack-audit =
+            let
+              gatedStack = (mkLib pkgs).mkAgentStack {
+                name = "gated-stack";
+                harness = "claude";
+                plugins = [ (mkPackages pkgs).example-plugin ];
+                audit = {
+                  tools = [ pkgs.jq ];
+                  threshold = 70;
+                };
+              };
+              plainStack = (mkLib pkgs).mkAgentStack {
+                name = "plain-stack";
+                harness = "claude";
+                plugins = [ (mkPackages pkgs).example-plugin ];
+              };
+            in
+            pkgs.runCommand "check-stack-audit" { } ''
+              gated=${gatedStack.audit}/bin/gated-stack-audit
+              [ -x "$gated" ] || { echo "audit script missing"; exit 1; }
+              grep -q -- '--threshold 70' "$gated" \
+                || { echo "threshold not passed to audit"; exit 1; }
+              grep -q '${pkgs.jq}/bin' "$gated" \
+                || { echo "audit tools not on PATH"; exit 1; }
+              grep -q "${gatedStack}/share/agent-plugins" "$gated" \
+                || { echo "auditor does not read its own stack"; exit 1; }
+
+              plain=${plainStack.audit}/bin/plain-stack-audit
+              [ -x "$plain" ] || { echo "default audit script missing"; exit 1; }
+              grep -q -- '--threshold' "$plain" \
+                && { echo "no threshold configured, none expected"; exit 1; }
+              touch $out
+            '';
+
+          # AI-560: invalid stacks must fail at evaluation, not at run
+          # time. tryEval catches throw; forcing drvPath forces the
+          # arguments that contain the throws.
+          stack-assertions =
+            let
+              plugin = (mkPackages pkgs).example-plugin;
+              failsToEval = args:
+                !(builtins.tryEval
+                  ((mkLib pkgs).mkAgentStack args).drvPath).success;
+              cases = [
+                {
+                  label = "missing harness";
+                  bad = failsToEval { name = "s"; plugins = [ plugin ]; };
+                }
+                {
+                  label = "unknown adapter";
+                  bad = failsToEval { name = "s"; harness = "emacs"; };
+                }
+                {
+                  label = "non-plugin package";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = "claude";
+                    plugins = [ pkgs.hello ];
+                  };
+                }
+                {
+                  label = "duplicate plugin names";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = "claude";
+                    plugins = [ plugin plugin ];
+                  };
+                }
+                {
+                  label = "package harness without mainProgram";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = pkgs.stdenvNoCC.mkDerivation {
+                      name = "no-mainProgram";
+                      dontUnpack = true;
+                      dontPatchShebangs = true;
+                      installPhase = "mkdir -p $out/bin; touch $out/bin/test";
+                      meta = { };
+                    };
+                  };
+                }
+                {
+                  label = "harness given as a Nix path literal";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = ./flake.nix;
+                  };
+                }
+                {
+                  label = "unknown audit option";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = "claude";
+                    audit.threshhold = 70;
+                  };
+                }
+              ];
+              report = c:
+                if c.bad
+                then ''echo "ok: ${c.label} rejected"''
+                else ''
+                  echo "FAIL: ${c.label} evaluated but should not have"
+                  exit 1
+                '';
+            in
+            pkgs.runCommand "check-stack-assertions" { }
+              (pkgs.lib.concatMapStringsSep "\n" report cases + ''
+
+                touch $out
+              '');
         });
       lib = forAllSystems mkLib;
     };
