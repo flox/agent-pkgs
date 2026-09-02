@@ -51,7 +51,12 @@ let
     else if builtins.isString harness then
       { adapter = harness; pinDir = null; }
     else
-      throw "mkAgentStack: harness must be a string, a path, or a package";
+      throw ''
+        mkAgentStack: harness must be the agent's name, a path to its
+        binary written as a string, or a package. A Nix path literal such
+        as ./result/bin/claude is not accepted: it would copy that one
+        file into the store without the rest of its package.
+      '';
 
   adapter =
     if lib.elem harnessInfo.adapter knownAdapters then harnessInfo.adapter

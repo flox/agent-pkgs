@@ -308,6 +308,13 @@
                     };
                   };
                 }
+                {
+                  label = "harness given as a Nix path literal";
+                  bad = failsToEval {
+                    name = "s";
+                    harness = ./flake.nix;
+                  };
+                }
               ];
               report = c:
                 if c.bad

@@ -11,7 +11,7 @@ builds with plain Nix — no Flox required.
 ## Use it
 
 ```sh
-nix build github:flox/agent-pkgs#example-plugin
+nix build github:agent-stacks/agent-pkgs#example-plugin
 ```
 
 Every package produces the canonical Agent Plugins layout:

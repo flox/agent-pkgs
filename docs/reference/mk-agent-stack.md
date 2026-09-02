@@ -30,7 +30,7 @@ A stack runs exactly one agent. Three ways to name it:
 | Form | Example | Behaviour |
 | ------- | ------- | --------- |
 | String | `harness = "claude";` | Resolved from the consumer's PATH at run time. |
-| Path | `harness = "${claude-code}/bin/claude";` | Pinned; the launcher puts that directory first on PATH. |
+| Binary path (string) | `harness = "${claude-code}/bin/claude";` | Pinned; the launcher puts that directory first on PATH. |
 | Package | `harness = claude-code;` | Pinned, using `meta.mainProgram` for the agent name. |
 
 The agent is identified by the binary's basename, matched against the
@@ -65,6 +65,8 @@ An invalid stack never builds:
 - a `plugins` entry that did not come from `buildAgentPlugin`
 - two plugins with the same name
 - a harness package without `meta.mainProgram`
+- a `harness` that is a Nix path literal, a list, or a number rather than
+  a name, a binary path written as a string, or a package
 
 ## Stability
 
